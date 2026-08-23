@@ -13,30 +13,43 @@ const multer = require('multer');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ---------- Paths ----------
-const DATA_DIR = path.join(__dirname, 'data');
+// Vercel deploys application files as read-only. Keep runtime data in /tmp
+// there, while retaining the project folder for normal local development.
+const APP_ROOT = __dirname;
+const STORAGE_ROOT = process.env.VERCEL ? path.join(os.tmpdir(), 'spotify-web-full') : APP_ROOT;
+const DATA_DIR = path.join(STORAGE_ROOT, 'data');
 const SONGS_FILE = path.join(DATA_DIR, 'songs.json');
 const PLAYLISTS_FILE = path.join(DATA_DIR, 'playlists.json');
 const LIKES_FILE = path.join(DATA_DIR, 'likes.json');
 const RECENT_FILE = path.join(DATA_DIR, 'recent.json');
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const UPLOADS_DIR = path.join(STORAGE_ROOT, 'uploads');
 const AUDIO_DIR = path.join(UPLOADS_DIR, 'audio');
 const COVER_DIR = path.join(UPLOADS_DIR, 'covers');
 
 [DATA_DIR, UPLOADS_DIR, AUDIO_DIR, COVER_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
+function initialData(file, fallback) {
+  const bundledFile = path.join(APP_ROOT, 'data', path.basename(file));
+  if (STORAGE_ROOT !== APP_ROOT && fs.existsSync(bundledFile)) {
+    return fs.readFileSync(bundledFile, 'utf-8');
+  }
+  return fallback;
+}
+
 [
   [SONGS_FILE, '[]'],
   [PLAYLISTS_FILE, '[]'],
   [LIKES_FILE, '[]'],
   [RECENT_FILE, '[]'],
 ].forEach(([file, initial]) => {
-  if (!fs.existsSync(file)) fs.writeFileSync(file, initial);
+  if (!fs.existsSync(file)) fs.writeFileSync(file, initialData(file, initial));
 });
 
 // ---------- JSON "database" helpers ----------
