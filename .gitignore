@@ -1,0 +1,8 @@
+node_modules/
+uploads/audio/*
+uploads/covers/*
+!uploads/audio/.gitkeep
+!uploads/covers/.gitkeep
+data/*.json
+!data/songs.json
+.DS_Store
