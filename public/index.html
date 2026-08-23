@@ -66,7 +66,7 @@
         <input type="text" id="searchInput" placeholder="What do you want to play?">
       </div>
       <div class="topbar-right">
-        <button class="upgrade-btn" id="topAddBtn" style="border:1px solid #7a7a7a;">Add music</button>
+        <a class="upgrade-btn" href="/admin.html" style="border:1px solid #7a7a7a;">Admin</a>
         <div class="user-pill">🎧</div>
       </div>
     </div>
@@ -88,9 +88,9 @@
 
         <div class="empty-state" id="emptyState" style="display:none;">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.6a4 4 0 1 0 2 3.47V7h5V3h-7z"/></svg>
-          <h3>Add your first song</h3>
-          <p>Upload an audio file from your device to start building your library.</p>
-          <button id="emptyAddBtn">Add song</button>
+          <h3>No songs yet</h3>
+          <p>The owner can add music from the admin panel.</p>
+          <a class="btn-primary" href="/admin.html">Open admin</a>
         </div>
       </div>
     </div>

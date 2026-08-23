@@ -14,6 +14,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,6 +29,7 @@ const SONGS_FILE = path.join(DATA_DIR, 'songs.json');
 const PLAYLISTS_FILE = path.join(DATA_DIR, 'playlists.json');
 const LIKES_FILE = path.join(DATA_DIR, 'likes.json');
 const RECENT_FILE = path.join(DATA_DIR, 'recent.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const UPLOADS_DIR = path.join(STORAGE_ROOT, 'uploads');
 const AUDIO_DIR = path.join(UPLOADS_DIR, 'audio');
 const COVER_DIR = path.join(UPLOADS_DIR, 'covers');
@@ -48,6 +50,7 @@ function initialData(file, fallback) {
   [PLAYLISTS_FILE, '[]'],
   [LIKES_FILE, '[]'],
   [RECENT_FILE, '[]'],
+  [SETTINGS_FILE, JSON.stringify({ siteTitle: 'Spotify Web', homeHeading: '', accentColor: '#1db954' }, null, 2)],
 ].forEach(([file, initial]) => {
   if (!fs.existsSync(file)) fs.writeFileSync(file, initialData(file, initial));
 });
@@ -72,6 +75,9 @@ const readLikes = () => readJson(LIKES_FILE);
 const writeLikes = (d) => writeJson(LIKES_FILE, d);
 const readRecent = () => readJson(RECENT_FILE);
 const writeRecent = (d) => writeJson(RECENT_FILE, d);
+const defaultSettings = { siteTitle: 'Spotify Web', homeHeading: '', accentColor: '#1db954' };
+const readSettings = () => ({ ...defaultSettings, ...readJson(SETTINGS_FILE) });
+const writeSettings = (d) => writeJson(SETTINGS_FILE, d);
 
 function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -82,6 +88,58 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
+
+// ---------- Owner authentication ----------
+// Credentials live only in deployment secrets. Session cookies are signed and
+// expire after eight hours; no password is returned to the browser.
+const SESSION_COOKIE = 'spotify_admin_session';
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+function parseCookies(header = '') {
+  return Object.fromEntries(header.split(';').map((part) => {
+    const index = part.indexOf('=');
+    return index === -1 ? [] : [part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1).trim())];
+  }).filter(([key]) => key));
+}
+function signSession(payload) {
+  return crypto.createHmac('sha256', process.env.ADMIN_SESSION_SECRET).update(payload).digest('base64url');
+}
+function sessionValue() {
+  const payload = Buffer.from(JSON.stringify({ exp: Date.now() + SESSION_TTL_MS })).toString('base64url');
+  return `${payload}.${signSession(payload)}`;
+}
+function isOwner(req) {
+  if (!process.env.ADMIN_SESSION_SECRET) return false;
+  const value = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  if (!value || !value.includes('.')) return false;
+  const [payload, signature] = value.split('.');
+  const expected = signSession(payload);
+  if (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return false;
+  try { return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')).exp > Date.now(); } catch (_) { return false; }
+}
+function requireOwner(req, res, next) {
+  if (!process.env.ADMIN_PASSWORD || !process.env.ADMIN_SESSION_SECRET) {
+    return res.status(503).json({ error: 'Admin authentication is not configured.' });
+  }
+  if (!isOwner(req)) return res.status(401).json({ error: 'Owner authentication required.' });
+  next();
+}
+
+app.post('/api/admin/login', (req, res) => {
+  const password = typeof req.body.password === 'string' ? req.body.password : '';
+  const configured = process.env.ADMIN_PASSWORD;
+  if (!configured || !process.env.ADMIN_SESSION_SECRET) {
+    return res.status(503).json({ error: 'Admin authentication is not configured.' });
+  }
+  const matches = password.length === configured.length && crypto.timingSafeEqual(Buffer.from(password), Buffer.from(configured));
+  if (!matches) return res.status(401).json({ error: 'Invalid password.' });
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${sessionValue()}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_MS / 1000}${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+  res.status(204).end();
+});
+app.post('/api/admin/logout', (req, res) => {
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+  res.status(204).end();
+});
+app.get('/api/admin/session', (req, res) => res.json({ authenticated: isOwner(req) }));
 
 // ---------- Multer (uploads) ----------
 const storage = multer.diskStorage({
@@ -115,6 +173,7 @@ app.get('/api/songs', (req, res) => res.json(readSongs()));
 
 app.post(
   '/api/songs',
+  requireOwner,
   upload.fields([{ name: 'audio', maxCount: 1 }, { name: 'cover', maxCount: 1 }]),
   (req, res) => {
     const { title, artist, album, genre, language } = req.body;
@@ -143,7 +202,19 @@ app.post(
   }
 );
 
-app.delete('/api/songs/:id', (req, res) => {
+app.patch('/api/songs/:id', requireOwner, (req, res) => {
+  const songs = readSongs();
+  const song = songs.find((item) => item.id === req.params.id);
+  if (!song) return res.status(404).json({ error: 'Song not found.' });
+  ['title', 'artist', 'album', 'genre', 'language'].forEach((field) => {
+    if (typeof req.body[field] === 'string') song[field] = req.body[field].trim();
+  });
+  if (!song.title) return res.status(400).json({ error: 'A song title is required.' });
+  writeSongs(songs);
+  res.json(song);
+});
+
+app.delete('/api/songs/:id', requireOwner, (req, res) => {
   const songs = readSongs();
   const idx = songs.findIndex((s) => s.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Song not found.' });
@@ -162,12 +233,28 @@ app.delete('/api/songs/:id', (req, res) => {
 
   [removed.audioUrl, removed.coverUrl].forEach((relUrl) => {
     if (!relUrl) return;
-    fs.unlink(path.join(__dirname, relUrl), (err) => {
+    if (!relUrl.startsWith('/uploads/')) return;
+    fs.unlink(path.join(STORAGE_ROOT, relUrl), (err) => {
       if (err && err.code !== 'ENOENT') console.error('Could not delete file:', relUrl, err);
     });
   });
 
   res.json({ success: true });
+});
+
+// =========================================================
+//  SITE SETTINGS
+// =========================================================
+app.get('/api/settings', (req, res) => res.json(readSettings()));
+app.put('/api/settings', requireOwner, (req, res) => {
+  const settings = {
+    siteTitle: typeof req.body.siteTitle === 'string' ? req.body.siteTitle.trim().slice(0, 80) : readSettings().siteTitle,
+    homeHeading: typeof req.body.homeHeading === 'string' ? req.body.homeHeading.trim().slice(0, 120) : readSettings().homeHeading,
+    accentColor: typeof req.body.accentColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(req.body.accentColor) ? req.body.accentColor : readSettings().accentColor,
+  };
+  if (!settings.siteTitle) return res.status(400).json({ error: 'A site title is required.' });
+  writeSettings(settings);
+  res.json(settings);
 });
 
 // =========================================================

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Spotify Web Admin</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <main class="shell">
+    <header><a href="/">← Back to player</a><button id="logout" class="quiet" hidden>Sign out</button></header>
+    <section id="loginPanel" class="card narrow">
+      <h1>Owner sign in</h1><p>Use the password configured in the deployment’s secrets.</p>
+      <form id="loginForm"><label>Password <input id="password" type="password" autocomplete="current-password" required></label><button>Sign in</button></form>
+      <p class="error" id="loginError" role="alert"></p>
+    </section>
+    <section id="adminPanel" hidden>
+      <div class="heading"><div><h1>Admin panel</h1><p>Manage the public music catalog and site appearance.</p></div></div>
+      <div class="grid">
+        <section class="card"><h2>Site settings</h2><form id="settingsForm">
+          <label>Site title <input name="siteTitle" maxlength="80" required></label>
+          <label>Home heading <input name="homeHeading" maxlength="120" placeholder="Good evening"></label>
+          <label>Accent color <input name="accentColor" type="color" value="#1db954"></label>
+          <button>Save settings</button></form>
+        </section>
+        <section class="card"><h2 id="songFormTitle">Add song</h2><form id="songForm">
+          <label>Title <input name="title" maxlength="160" required></label>
+          <label>Artist <input name="artist" maxlength="160"></label>
+          <label>Album <input name="album" maxlength="160"></label>
+          <label>Genre <input name="genre" maxlength="80"></label>
+          <label>Language <input name="language" maxlength="80"></label>
+          <label id="audioLabel">Audio file <input name="audio" type="file" accept="audio/*" required></label>
+          <label id="coverLabel">Cover image <input name="cover" type="file" accept="image/*"></label>
+          <div class="actions"><button id="saveSong">Add song</button><button type="button" id="cancelEdit" class="quiet" hidden>Cancel</button></div>
+        </form></section>
+      </div>
+      <section class="card"><h2>Catalog</h2><p id="catalogStatus"></p><div id="songs" class="songs"></div></section>
+    </section>
+    <p class="notice" id="notice" role="status"></p>
+  </main>
+  <script src="admin.js"></script>
+</body>
+</html>

@@ -142,14 +142,21 @@
   const likeSongApi = (id) => api('/likes/' + id, { method: 'POST' });
   const unlikeSongApi = (id) => api('/likes/' + id, { method: 'DELETE' });
   const getRecent = () => api('/recent');
+  const getSettings = () => api('/settings');
   const markRecentApi = (id) => api('/recent/' + id, { method: 'POST' });
   const searchApi = (q) => api('/search?q=' + encodeURIComponent(q));
 
   // ================= Bootstrap =================
   async function bootstrap() {
     try {
-      const [s, p, l, r] = await Promise.all([getSongs(), getPlaylists(), getLikes(), getRecent()]);
+      const [s, p, l, r, settings] = await Promise.all([getSongs(), getPlaylists(), getLikes(), getRecent(), getSettings()]);
       songs = s; playlists = p; likedIds = l; recentIds = r;
+      if (settings.siteTitle) {
+        document.title = settings.siteTitle;
+        document.querySelector('.brand span').textContent = settings.siteTitle;
+      }
+      if (settings.accentColor) document.documentElement.style.setProperty('--green', settings.accentColor);
+      if (settings.homeHeading) document.getElementById('greeting').textContent = settings.homeHeading;
     } catch (err) {
       showToast('Could not reach the server. Is it running?', true);
     }
@@ -227,9 +234,7 @@
           <div class="meta">
             <div class="title">${escapeHtml(song.title)}</div>
             <div class="sub">Song • ${escapeHtml(song.artist)}${song.language ? ' • ' + escapeHtml(song.language) : ''}</div>
-          </div>
-          <button class="remove-btn" title="Delete"><svg viewBox="0 0 24 24">${ICON_TRASH}</svg></button>`;
-        el.querySelector('.remove-btn').addEventListener('click', (e) => { e.stopPropagation(); handleDeleteSong(song.id); });
+          </div>`;
         el.addEventListener('click', () => playContext(songs, songs.indexOf(song)));
         libraryList.appendChild(el);
       });
@@ -325,7 +330,7 @@
     });
 
     cardGrid.innerHTML = '';
-    songs.forEach((song, idx) => cardGrid.appendChild(buildMusicCard(song, idx, songs, true)));
+    songs.forEach((song, idx) => cardGrid.appendChild(buildMusicCard(song, idx, songs)));
   }
 
   function buildMusicCard(song, idx, context, showRemove) {
@@ -350,7 +355,6 @@
     return el;
   }
 
-  document.getElementById('emptyAddBtn').addEventListener('click', openAddModal);
 
   // ================= SEARCH =================
   searchInput.addEventListener('input', () => {
@@ -789,7 +793,7 @@
   const confirmAdd = document.getElementById('confirmAdd');
   let pendingFile = null, pendingCover = null;
 
-  function openAddModal() { modalOverlay.classList.add('open'); }
+  function openAddModal() { window.location.assign('/admin.html'); }
   function closeAddModal() {
     modalOverlay.classList.remove('open');
     pendingFile = null; pendingCover = null;
@@ -799,7 +803,6 @@
     confirmAdd.disabled = true; confirmAdd.textContent = 'Add song';
   }
   document.getElementById('openAddModal').addEventListener('click', openAddModal);
-  document.getElementById('topAddBtn').addEventListener('click', openAddModal);
   document.getElementById('cancelAdd').addEventListener('click', closeAddModal);
   modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeAddModal(); });
   fileDrop.addEventListener('click', () => fileInput.click());
